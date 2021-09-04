@@ -1,8 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Net.Sockets;
 using System.Net;
 using BetterAsync;
@@ -15,16 +12,25 @@ namespace BetterNetworking
         private BinaryFormatter bf = new BinaryFormatter();
         public Socket socket;
         private NetworkStream stream;
-        public int trafficCount
+        private Queue<object> items=new Queue<object>();
+        public WebChannel(string ip,int port=7777,int timeout=5000)
         {
-            get => items.Count;
-        }
-        public WebChannel(IPEndPoint destination)
-        {
+            
             socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
-            stream = new NetworkStream(socket);
+            
             Flow.Go(() => {
-                socket.Connect(destination);
+                socket.BeginConnect(IPAddress.Parse(ip),port,null,null).AsyncWaitHandle.WaitOne(timeout,true);
+                if (!socket.Connected)
+                {
+                    socket.Close();
+                    throw new InvalidOperationException("Failed to open connection");
+                }
+                
+                stream = new NetworkStream(socket);
+                while (true)
+                {
+                    items.Enqueue(bf.Deserialize(stream));
+                }
             });
         }
         public void Send<T>(T data)
@@ -35,12 +41,30 @@ namespace BetterNetworking
         {
             return new Promise<T>((resolve, reject) =>
             {
-
+                Flow.WaitUntil(() => items.Count <= 0);
+                resolve((T)items.Dequeue());
             });
         }
     }
-    public class WebReceiver
+    public class WebReceiver<T>
     {
-
+        public event Action<T> OnReceive;
+        public bool receiving;
+        public WebReceiver(WebChannel from)
+        {
+            Flow.Go(async () =>
+            {
+                while (true)
+                {
+                    try
+                    {
+                        Flow.WaitUntil(() => receiving);
+                        OnReceive?.Invoke(await from.Receive<T>());
+                        Flow.Wait(10);
+                    }
+                    catch (InvalidCastException) { } //not desired type
+                }
+            });
+        }
     }
 }

@@ -10,6 +10,20 @@ namespace BetterNetworking
     {
         static void Main(string[] args)
         {
+            WebChannel rc = new WebChannel("127.0.0.1",7778);
+            WebReceiver<string> webReceiver = new WebReceiver<string>(rc);
+            webReceiver.OnReceive += Received;
+
+            while (true)
+            {
+                Console.ReadLine();
+                rc.Send("Hello World!");
+            }
+        }
+
+        private static void Received(string obj)
+        {
+            Console.WriteLine("Receive: '" + obj + "'");
         }
     }
 }
